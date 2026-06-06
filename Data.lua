@@ -34,6 +34,7 @@ ns.dungeons = {
         { id = 1160, name = "Test of Lore" },
         { id = 1951, name = "Rituals of Power" },              -- Mage
         -- Cathedral / multi-wing
+        { id = 261,  name = "Down the Scarlet Path" },         -- Alliance; has breadcrumb Brother Anton (6141)
         { id = 1052, name = "Down the Scarlet Path" },         -- Alliance, gates 1053
         { id = 1053, name = "In the Name of the Light" },      -- Alliance
         { id = 1048, name = "Into the Scarlet Monastery" },    -- Horde

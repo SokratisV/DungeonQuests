@@ -212,6 +212,9 @@ local function questRowTooltip(row)
     GameTooltip:AddLine(data.info.name or data.q.name, 1, 1, 1)
     local st = ns.STATUS[data.status]
     GameTooltip:AddLine(st.label, st.color[1], st.color[2], st.color[3])
+    if data.status == "active" then
+        GameTooltip:AddLine("Currently in your quest log", 0.8, 0.8, 0.6)
+    end
     if data.reason then GameTooltip:AddLine(data.reason, 0.9, 0.7, 0.5, true) end
     if data.chainTotal and data.chainTotal > 1 then
         GameTooltip:AddLine(string.format("Chain: step %d of %d", data.chainStep, data.chainTotal), 0.7, 0.7, 1)
@@ -252,7 +255,8 @@ local function questRowTooltip(row)
     end
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Quest ID " .. data.q.id, 0.5, 0.5, 0.5)
-    GameTooltip:AddLine("Click to copy a Wowhead link", 0.5, 0.8, 0.5)
+    GameTooltip:AddLine("Left-click: copy Wowhead link", 0.5, 0.8, 0.5)
+    GameTooltip:AddLine(ns.db.seen[data.q.id] and "Right-click: unmark as seen" or "Right-click: mark as seen", 0.5, 0.8, 0.5)
     GameTooltip:Show()
 end
 
@@ -276,14 +280,29 @@ local function getQuestRow(i, parent)
     row.meta:SetPoint("RIGHT", row, "RIGHT", -6, 0)
     row.meta:SetJustifyH("LEFT")
 
+    -- Strikethrough line for "seen" quests, sized to the name text at render time.
+    row.strike = row:CreateTexture(nil, "OVERLAY")
+    row.strike:SetColorTexture(0.7, 0.7, 0.7, 0.9)
+    row.strike:SetHeight(1)
+    row.strike:Hide()
+
     row.hl = row:CreateTexture(nil, "BACKGROUND")
     row.hl:SetAllPoints()
     row.hl:SetColorTexture(1, 1, 1, 0.06)
     row.hl:Hide()
     row:SetScript("OnEnter", function(self) self.hl:Show(); questRowTooltip(self) end)
     row:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
-    row:SetScript("OnClick", function(self)
-        if self.data then ns.ShowQuestLink(self.data.q.id) end
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:SetScript("OnClick", function(self, button)
+        if not self.data then return end
+        if button == "RightButton" then
+            local id = self.data.q.id
+            ns.db.seen[id] = (not ns.db.seen[id]) or nil
+            ns.RefreshUI()
+            questRowTooltip(self)   -- refresh the hint text immediately
+        else
+            ns.ShowQuestLink(self.data.q.id)
+        end
     end)
     questRows[i] = row
     return row
@@ -338,7 +357,7 @@ local function renderQuests()
         -- Indent chain steps after the first (and breadcrumb rows) so they read
         -- as belonging under their quest.
         local isChainChild = data.chainTotal and data.chainTotal > 1 and data.chainStep > 1
-        local indent = (isChainChild or data.isBreadcrumb) and 16 or 0
+        local indent = isChainChild and 16 or 0   -- breadcrumbs sit above their quest, not indented under it
         row.dot:ClearAllPoints()
         row.dot:SetPoint("TOPLEFT", 4 + indent, -4)
         row.dot:SetVertexColor(st.color[1], st.color[2], st.color[3])
@@ -357,10 +376,23 @@ local function renderQuests()
         local bcTag = data.isBreadcrumb and " |cff9d9d9d(breadcrumb)|r" or ""
         row.name:SetText(prefix .. connector .. bread .. (data.info.name or data.q.name) .. lvl .. fac .. chainTag .. bcTag)
 
-        if data.status == "unavailable" or data.status == "done" then
-            row.name:SetAlpha(0.55); row.meta:SetAlpha(0.55); row.dot:SetAlpha(0.55)
+        local seen = ns.db.seen[data.q.id]
+        local alpha = 1
+        if seen then alpha = 0.4
+        elseif data.status == "unavailable" or data.status == "done" then alpha = 0.55 end
+        row.name:SetAlpha(alpha); row.meta:SetAlpha(alpha); row.dot:SetAlpha(alpha)
+
+        -- Strike through "seen" quests (line sized to the rendered name width).
+        if seen then
+            local avail = (row:GetWidth() or 400) - indent - 32
+            local w = row.name:GetStringWidth()
+            if avail > 0 and w > avail then w = avail end
+            row.strike:ClearAllPoints()
+            row.strike:SetPoint("LEFT", row.name, "LEFT", 0, 0)
+            row.strike:SetWidth(math.max(1, w))
+            row.strike:Show()
         else
-            row.name:SetAlpha(1); row.meta:SetAlpha(1); row.dot:SetAlpha(1)
+            row.strike:Hide()
         end
         if data.isBreadcrumb and data.breadcrumbFor then
             row.meta:SetText(pickupLine(data.info) .. "   |cff7f9f7fleads to " .. data.breadcrumbFor .. "|r")

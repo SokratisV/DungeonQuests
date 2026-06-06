@@ -21,8 +21,10 @@ Pick a dungeon on the left; its quests appear on the right, each tagged:
 | **Unavailable** (red) | Wrong faction / class / race for this character |
 
 Each row's second line is the pickup location: quest-giver NPC — zone (x, y). Hover a
-row for the full quest-giver list, level, prerequisites and quest ID. **Click a quest**
-to pop up its Wowhead link (auto-selected — press Ctrl+C to copy).
+row for the full quest-giver list, level, prerequisites and quest ID. **Left-click a quest**
+to pop up its Wowhead link (auto-selected — press Ctrl+C to copy). **Right-click a quest**
+to mark it as "seen" — it's struck through and faded (right-click again to unmark). Seen
+marks are saved account-wide.
 
 Filters (top of the window): **My faction only**, **Hide completed**, **Hide unavailable**,
 and **Breadcrumbs** — when on, breadcrumb quests that lead to a quest are shown (marked with a
