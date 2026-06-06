@@ -42,13 +42,46 @@ Quest names, levels, factions, quest-givers, pickup coordinates and prerequisite
 live from the **Questie** addon's database at runtime. Questie must be installed and enabled.
 If it isn't, the window says so instead of erroring.
 
-## Adding dungeons
+All 20 Classic and 16 TBC 5-man dungeons ship pre-populated (~360 quests). You can still add
+your own quests in-game with **+ Add quest** (saved locally), or contribute them to everyone via
+a pull request — see below.
 
-`Data.lua` is the only hand-maintained file. Each dungeon is an entry in `ns.dungeons` with
-a `quests` list of `{ id = <questID>, name = "<expected name>" }`. There is no API to enumerate
-"all quests for a dungeon", so this mapping is curated; everything else comes from Questie.
-After adding IDs, run `/dq validate` in-game to confirm they're correct.
+## Contributing quest data
 
-Currently populated: **Uldaman**, **Scarlet Monastery**, **Zul'Farrak**, **Temple of Atal'Hakkar
-(Sunken Temple)**, and **Blackrock Depths**. All other Classic + TBC dungeons are listed with empty
-quest sets, ready to be filled in the same way.
+The quest database is a single hand-maintained file: **`Data.lua`**. Everything else
+(names, levels, factions, quest-givers, pickup coordinates, prerequisites) is read live from
+Questie at runtime, so a contribution is almost always just **editing `Data.lua`** — no other
+file needs to change.
+
+### What a dungeon entry looks like
+
+`ns.dungeons` is an ordered list. Each dungeon is one entry:
+
+```lua
+{ key = "uld", name = "Uldaman", expansion = "Classic", minLevel = 35, maxLevel = 45,
+  zone = "Badlands", quests = {
+    { id = 1144, name = "Reclaimed Treasures" },
+    { id = 2278, name = "The Platinum Discs" },
+    -- ...
+} },
+```
+
+- `key` — a unique short id for the dungeon.
+- `expansion` — `"Classic"` or `"TBC"` (controls the grouping in the list).
+- `minLevel` / `maxLevel` / `zone` — shown in the header; cosmetic.
+- `quests` — the curated part: a list of `{ id = <questID>, name = "<expected name>" }`.
+  The `name` is only a fallback label and lets `/dq validate` flag a wrong id. Questie's name
+  is authoritative at runtime, so faction/level/giver are filled in automatically — you only
+  need the correct **quest id**.
+
+### To add or fix quests
+
+1. Find the quest's numeric id (e.g. from its Wowhead URL: `wowhead.com/.../quest=NNNNN`).
+2. Add a `{ id = NNNNN, name = "Quest Name" }` line to that dungeon's `quests` list (or add a
+   whole new dungeon entry).
+3. In-game, `/reload` then run **`/dq validate`** — it checks every id against Questie and prints
+   any that are missing or whose name doesn't match, so mistakes are easy to catch.
+4. Open a pull request on GitHub with your `Data.lua` change.
+
+That's it — you do **not** need to touch `Core.lua`, `Questie.lua`, `Status.lua`, or `UI.lua` to
+add quest data. Those only change for actual addon behaviour/features.
