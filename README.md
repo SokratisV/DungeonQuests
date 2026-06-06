@@ -44,5 +44,6 @@ a `quests` list of `{ id = <questID>, name = "<expected name>" }`. There is no A
 "all quests for a dungeon", so this mapping is curated; everything else comes from Questie.
 After adding IDs, run `/dq validate` in-game to confirm they're correct.
 
-Currently fully populated: **Uldaman**. All other Classic + TBC dungeons are listed with empty
+Currently populated: **Uldaman**, **Scarlet Monastery**, **Zul'Farrak**, **Temple of Atal'Hakkar
+(Sunken Temple)**, and **Blackrock Depths**. All other Classic + TBC dungeons are listed with empty
 quest sets, ready to be filled in the same way.
