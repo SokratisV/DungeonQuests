@@ -16,6 +16,7 @@ ns.defaults = {
     window   = { point = nil },     -- { point, relPoint, x, y }
     selected = nil,                 -- last selected dungeon key
     seen     = {},                  -- [questID] = true: manually marked "seen"
+    custom   = {},                  -- [dungeonKey] = { questID, ... }: user-added quests
 }
 
 --------------------------------------------------------------------------

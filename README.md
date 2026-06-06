@@ -26,6 +26,11 @@ to pop up its Wowhead link (auto-selected — press Ctrl+C to copy). **Right-cli
 to mark it as "seen" — it's struck through and faded (right-click again to unmark). Seen
 marks are saved account-wide.
 
+**Add your own quests:** with a dungeon selected, click **+ Add quest** (top-right) and enter a
+quest ID — or just paste a Wowhead quest link. It's validated against Questie and added to that
+dungeon (tagged `(custom)`, saved account-wide). To remove one, click the red **X** on its row (or
+Shift-click it). This also lets you fill in the dungeons that don't ship with quests yet.
+
 Filters (top of the window): **My faction only**, **Hide completed**, **Hide unavailable**,
 and **Breadcrumbs** — when on, breadcrumb quests that lead to a quest are shown (marked with a
 🍞 bread icon and indented above the quest they point to). Breadcrumbs are also always listed in

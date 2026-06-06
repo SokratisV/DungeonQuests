@@ -57,6 +57,85 @@ function ns.ShowQuestLink(questId)
     StaticPopup_Show("DUNGEONQUESTS_LINK")
 end
 
+--------------------------------------------------------------------------
+-- User-added quests: add by ID (or pasted Wowhead link), remove via Shift-click.
+--------------------------------------------------------------------------
+StaticPopupDialogs["DUNGEONQUESTS_ADD"] = {
+    text = "Add a quest to %s.\nEnter a quest ID (or paste a Wowhead quest link):",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    hasEditBox = true,
+    editBoxWidth = 260,
+    OnAccept = function(self, data)
+        local eb = self.editBox or self.EditBox
+        ns.AddCustomQuest(eb and eb:GetText(), data)
+    end,
+    EditBoxOnEnterPressed = function(self, data)
+        ns.AddCustomQuest(self:GetText(), data)
+        self:GetParent():Hide()
+    end,
+    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
+function ns.AddCustomQuest(text, dungeonKey)
+    dungeonKey = dungeonKey or selectedKey
+    if not dungeonKey then return end
+    if not ns.QuestieReady then
+        print("|cff66ccffDungeon Quests|r: Questie isn't ready yet — try again in a moment.")
+        return
+    end
+    local s = tostring(text or "")
+    local id = tonumber(s:match("quest=(%d+)")) or tonumber(s:match("(%d+)"))
+    if not id then
+        print("|cff66ccffDungeon Quests|r: enter a quest ID, or paste a Wowhead quest link.")
+        return
+    end
+    local info = ns.GetQuestInfo(id)
+    if not info or info.missing or not info.name then
+        print("|cff66ccffDungeon Quests|r: no quest " .. id .. " found in Questie's database.")
+        return
+    end
+    for _, d in ipairs(ns.dungeons) do
+        if d.key == dungeonKey then
+            for _, q in ipairs(d.quests) do
+                if q.id == id then
+                    print("|cff66ccffDungeon Quests|r: \"" .. info.name .. "\" is already listed here.")
+                    return
+                end
+            end
+        end
+    end
+    ns.db.custom = ns.db.custom or {}
+    local list = ns.db.custom[dungeonKey] or {}
+    for _, qid in ipairs(list) do
+        if qid == id then
+            print("|cff66ccffDungeon Quests|r: \"" .. info.name .. "\" is already added.")
+            return
+        end
+    end
+    list[#list + 1] = id
+    ns.db.custom[dungeonKey] = list
+    print("|cff66ccffDungeon Quests|r: added \"" .. info.name .. "\".")
+    ns.RefreshUI()
+end
+
+function ns.RemoveCustomQuest(id, dungeonKey)
+    dungeonKey = dungeonKey or selectedKey
+    local list = ns.db.custom and ns.db.custom[dungeonKey]
+    if not list then return end
+    for i, qid in ipairs(list) do
+        if qid == id then
+            table.remove(list, i)
+            local info = ns.GetQuestInfo(id)
+            print("|cff66ccffDungeon Quests|r: removed \"" .. ((info and info.name) or ("quest " .. id)) .. "\".")
+            break
+        end
+    end
+    if #list == 0 then ns.db.custom[dungeonKey] = nil end
+    ns.RefreshUI()
+end
+
 -- A dungeon's quests, filtered to what the player wants to see, each annotated
 -- with live status and chain position. Returns the row list + a done/total tally.
 --
@@ -66,10 +145,27 @@ end
 -- looking like duplicates. Chains are then ordered by their most-actionable step.
 local function buildQuestList(dungeon)
     local f = ns.db.filters
+
+    -- Merge curated quests with the player's own added quests for this dungeon.
+    local entries, idseen = {}, {}
+    for _, q in ipairs(dungeon.quests) do
+        entries[#entries + 1] = q
+        idseen[q.id] = true
+    end
+    local customList = ns.db.custom and ns.db.custom[dungeon.key]
+    if customList then
+        for _, id in ipairs(customList) do
+            if not idseen[id] then
+                entries[#entries + 1] = { id = id, custom = true }
+                idseen[id] = true
+            end
+        end
+    end
+
     local rows = {}
-    for idx, q in ipairs(dungeon.quests) do
-        local info = ns.GetQuestInfo(q.id) or { missing = true, name = q.name }
-        if not info.name then info.name = q.name end
+    for idx, q in ipairs(entries) do
+        local info = ns.GetQuestInfo(q.id) or { missing = true }
+        if not info.name then info.name = q.name or ("Quest " .. q.id) end
         local status, reason = ns.GetQuestStatus(q.id, info)
 
         local show = true
@@ -79,7 +175,7 @@ local function buildQuestList(dungeon)
         if f.hideUnavailable  and status == "unavailable" then show = false end
 
         if show then
-            rows[#rows + 1] = { q = q, info = info, status = status, reason = reason, idx = idx }
+            rows[#rows + 1] = { q = q, info = info, status = status, reason = reason, idx = idx, isCustom = q.custom }
         end
     end
 
@@ -257,6 +353,9 @@ local function questRowTooltip(row)
     GameTooltip:AddLine("Quest ID " .. data.q.id, 0.5, 0.5, 0.5)
     GameTooltip:AddLine("Left-click: copy Wowhead link", 0.5, 0.8, 0.5)
     GameTooltip:AddLine(ns.db.seen[data.q.id] and "Right-click: unmark as seen" or "Right-click: mark as seen", 0.5, 0.8, 0.5)
+    if data.isCustom then
+        GameTooltip:AddLine("Custom quest — click the red X (or Shift-click) to remove", 0.4, 0.75, 1)
+    end
     GameTooltip:Show()
 end
 
@@ -290,6 +389,25 @@ local function getQuestRow(i, parent)
     row.hl:SetAllPoints()
     row.hl:SetColorTexture(1, 1, 1, 0.06)
     row.hl:Hide()
+
+    -- Remove button (shown only on user-added quests).
+    row.remove = CreateFrame("Button", nil, row)
+    row.remove:SetSize(16, 16)
+    row.remove:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -3)
+    row.remove:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+    row.remove:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+    row.remove:Hide()
+    row.remove:SetScript("OnClick", function(self)
+        local d = self:GetParent().data
+        if d and d.isCustom then ns.RemoveCustomQuest(d.q.id) end
+    end)
+    row.remove:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Remove this custom quest", 1, 0.4, 0.4)
+        GameTooltip:Show()
+    end)
+    row.remove:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     row:SetScript("OnEnter", function(self) self.hl:Show(); questRowTooltip(self) end)
     row:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -300,6 +418,8 @@ local function getQuestRow(i, parent)
             ns.db.seen[id] = (not ns.db.seen[id]) or nil
             ns.RefreshUI()
             questRowTooltip(self)   -- refresh the hint text immediately
+        elseif IsShiftKeyDown() and self.data.isCustom then
+            ns.RemoveCustomQuest(self.data.q.id)
         else
             ns.ShowQuestLink(self.data.q.id)
         end
@@ -317,6 +437,8 @@ local function renderQuests()
     -- Hide all rows first.
     for _, r in ipairs(questRows) do r:Hide() end
 
+    if UI.addBtn then UI.addBtn:SetShown(dungeon ~= nil) end
+
     if not dungeon then
         UI.header:SetText("Select a dungeon")
         UI.empty:SetText("")
@@ -331,8 +453,9 @@ local function renderQuests()
             or "Loading Questie data…")
         return
     end
-    if #dungeon.quests == 0 then
-        UI.empty:SetText("No quests catalogued for this dungeon yet.")
+    local customCount = (ns.db.custom and ns.db.custom[dungeon.key] and #ns.db.custom[dungeon.key]) or 0
+    if #dungeon.quests == 0 and customCount == 0 then
+        UI.empty:SetText("No quests catalogued for this dungeon yet.\nClick \"+ Add quest\" to add your own.")
         return
     end
 
@@ -374,7 +497,10 @@ local function renderQuests()
         local connector = isChainChild and "|cff7f7f7f\194\187|r " or ""   -- "» " (U+21B3 ↳ isn't in the game font)
         local bread = data.isBreadcrumb and (BREAD .. " ") or ""
         local bcTag = data.isBreadcrumb and " |cff9d9d9d(breadcrumb)|r" or ""
-        row.name:SetText(prefix .. connector .. bread .. (data.info.name or data.q.name) .. lvl .. fac .. chainTag .. bcTag)
+        local customTag = data.isCustom and " |cff66ccff(custom)|r" or ""
+        row.name:SetText(prefix .. connector .. bread .. (data.info.name or data.q.name) .. lvl .. fac .. chainTag .. bcTag .. customTag)
+        row.remove:SetShown(data.isCustom and true or false)
+        row.name:SetPoint("RIGHT", row, "RIGHT", data.isCustom and -22 or -6, 0)   -- leave room for the ✕
 
         local seen = ns.db.seen[data.q.id]
         local alpha = 1
@@ -613,9 +739,22 @@ local function buildUI()
     -- right pane
     UI.header = UI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     UI.header:SetPoint("TOPLEFT", leftBG, "TOPRIGHT", 16, -2)
-    UI.header:SetPoint("RIGHT", UI, "RIGHT", -20, 0)
     UI.header:SetJustifyH("LEFT")
     UI.header:SetText("Select a dungeon")
+
+    -- "+ Add quest" button: adds a user quest to the selected dungeon.
+    UI.addBtn = CreateFrame("Button", nil, UI, "UIPanelButtonTemplate")
+    UI.addBtn:SetSize(94, 20)
+    UI.addBtn:SetText("+ Add quest")
+    UI.addBtn:SetPoint("TOPRIGHT", UI, "TOPRIGHT", -16, -84)
+    UI.addBtn:SetScript("OnClick", function()
+        if not selectedKey then return end
+        local d
+        for _, dd in ipairs(ns.dungeons) do if dd.key == selectedKey then d = dd break end end
+        StaticPopup_Show("DUNGEONQUESTS_ADD", d and d.name or "", nil, selectedKey)
+    end)
+    UI.addBtn:Hide()
+    UI.header:SetPoint("RIGHT", UI.addBtn, "LEFT", -8, 0)
 
     local rightBG = CreateFrame("Frame", nil, UI, "BackdropTemplate")
     rightBG:SetPoint("TOPLEFT", leftBG, "TOPRIGHT", 16, -26)
