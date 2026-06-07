@@ -12,11 +12,15 @@ ns.defaults = {
         hideCompleted     = false,  -- hide quests already done
         hideUnavailable   = false,  -- hide quests not doable by this class/race
         showBreadcrumbs   = false,  -- show breadcrumb quests that lead to each quest
+        showCounts        = true,   -- show per-dungeon "done/total" + green when complete
+        breadcrumbsInCompletion = false, -- count breadcrumbs toward a dungeon's completion
     },
     window   = { point = nil },     -- { point, relPoint, x, y }
     selected = nil,                 -- last selected dungeon key
     seen     = {},                  -- [questID] = true: manually marked "seen"
     custom   = {},                  -- [dungeonKey] = { questID, ... }: user-added quests
+    collapsed = {},                 -- [expansion] = true: category collapsed in the list
+    opacity  = 1,                   -- window opacity (0.3 - 1.0)
 }
 
 --------------------------------------------------------------------------
@@ -77,6 +81,8 @@ SlashCmdList.DUNGEONQUESTS = function(msg)
         if ns.ValidateData then ns.ValidateData() end
     elseif msg == "bc" then
         if ns.BreadcrumbDebug then ns.BreadcrumbDebug() end
+    elseif msg == "config" or msg == "options" or msg == "settings" then
+        if ns.OpenOptions then ns.OpenOptions() end
     elseif msg == "reset" then
         DungeonQuestsDB = CopyDefaults(ns.defaults, {})
         ns.db = DungeonQuestsDB

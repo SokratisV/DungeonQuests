@@ -31,10 +31,23 @@ quest ID — or just paste a Wowhead quest link. It's validated against Questie 
 dungeon (tagged `(custom)`, saved account-wide). To remove one, click the red **X** on its row (or
 Shift-click it). This also lets you fill in the dungeons that don't ship with quests yet.
 
-Filters (top of the window): **My faction only**, **Hide completed**, **Hide unavailable**,
-and **Breadcrumbs** — when on, breadcrumb quests that lead to a quest are shown (marked with a
-🍞 bread icon and indented above the quest they point to). Breadcrumbs are also always listed in
-a quest's hover tooltip. The search box filters the dungeon list by name.
+The **Classic** and **TBC** category headers are collapsible — click one to fold/unfold its
+dungeons (remembered between sessions; searching temporarily shows everything). The search box
+filters the dungeon list by name.
+
+### Settings
+
+All options live in the standard settings panel — **Esc → Options → AddOns → Dungeon Quests**,
+the **Settings** button in the window, or `/dq config`:
+
+- **Show only my faction's quests**, **Hide completed quests**, **Hide unavailable quests**
+- **Show breadcrumb quests** — lists the breadcrumb quests leading to a quest (🍞, indented above
+  it); breadcrumbs are also always shown in a quest's hover tooltip
+- **Show completion counts** — each dungeon's `done/total` in the list, with its name turning
+  **green** when complete; **Count breadcrumbs toward completion** includes them in the totals
+- **Window opacity** — fades the whole window (100% = fully opaque)
+
+All settings are saved account-wide.
 
 ## Requires Questie
 

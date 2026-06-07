@@ -34,27 +34,71 @@ end
 --------------------------------------------------------------------------
 -- Wowhead link popup (a selectable text box; Ctrl+C to copy).
 --------------------------------------------------------------------------
+-- Custom fixed-size popup (a StaticPopup with an editBox re-widens on every
+-- show -- this avoids that and lets Ctrl+C copy & close directly).
 local linkURL = ""
-StaticPopupDialogs["DUNGEONQUESTS_LINK"] = {
-    text = "Wowhead link — press Ctrl+C to copy:",
-    button1 = OKAY,
-    hasEditBox = true,
-    editBoxWidth = 350,
-    OnShow = function(self)
-        local eb = self.editBox or self.EditBox
-        if eb then eb:SetText(linkURL); eb:HighlightText(); eb:SetFocus(); eb:SetCursorPosition(0) end
-    end,
-    EditBoxOnTextChanged = function(self)            -- keep it effectively read-only
+local linkPopup
+local function buildLinkPopup()
+    local f = CreateFrame("Frame", "DungeonQuestsLinkPopup", UIParent, "BackdropTemplate")
+    f:SetSize(400, 112)
+    f:SetPoint("CENTER")
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetToplevel(true)
+    f:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOP", 0, -16)
+    title:SetText("Wowhead link — Ctrl+C to copy")
+
+    local eb = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    eb:SetSize(336, 22)
+    eb:SetPoint("TOP", title, "BOTTOM", 0, -14)
+    eb:SetAutoFocus(false)
+    f.editBox = eb
+
+    local close = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    close:SetSize(90, 22)
+    close:SetPoint("BOTTOM", 0, 12)
+    close:SetText(CLOSE)
+    close:SetScript("OnClick", function() f:Hide() end)
+
+    -- keep it effectively read-only and always re-selected
+    eb:SetScript("OnTextChanged", function(self)
         if self:GetText() ~= linkURL then self:SetText(linkURL); self:HighlightText() end
-    end,
-    EditBoxOnEnterPressed  = function(self) self:GetParent():Hide() end,
-    EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
-    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-}
+    end)
+    eb:SetScript("OnEscapePressed", function() f:Hide() end)
+    eb:SetScript("OnEnterPressed", function() f:Hide() end)
+    eb:SetScript("OnKeyDown", function(self, key)
+        -- the OS performs the copy on this Ctrl+C; close right after it lands
+        if key == "C" and IsControlKeyDown() then
+            C_Timer.After(0, function() f:Hide() end)
+        end
+    end)
+
+    tinsert(UISpecialFrames, "DungeonQuestsLinkPopup")   -- Escape closes
+    f:Hide()
+    linkPopup = f
+    return f
+end
 
 function ns.ShowQuestLink(questId)
     linkURL = "https://www.wowhead.com/tbc/quest=" .. questId
-    StaticPopup_Show("DUNGEONQUESTS_LINK")
+    local f = linkPopup or buildLinkPopup()
+    f.editBox:SetText(linkURL)
+    f:Show()
+    f.editBox:SetFocus()
+    f.editBox:HighlightText()
+    f.editBox:SetCursorPosition(0)
 end
 
 --------------------------------------------------------------------------
@@ -445,7 +489,7 @@ local function renderQuests()
         return
     end
 
-    UI.header:SetText(dungeon.name .. "  |cff999999(" .. dungeon.zone .. ", lvl " .. dungeon.minLevel .. "-" .. dungeon.maxLevel .. ")|r")
+    UI.header:SetText(dungeon.name)
 
     if not ns.QuestieReady then
         UI.empty:SetText(ns.questieMissing
@@ -459,13 +503,12 @@ local function renderQuests()
         return
     end
 
-    local rows, done, total = buildQuestList(dungeon)
+    local rows, _, total = buildQuestList(dungeon)
     if total == 0 then
         UI.empty:SetText("No quests match your filters.")
     else
         UI.empty:SetText("")
     end
-    UI.header:SetText(UI.header:GetText() .. string.format("   |cffffffff%d/%d done|r", done, total))
 
     local y = -2
     for i, data in ipairs(rows) do
@@ -537,13 +580,18 @@ end
 local function buildLeftItems()
     local items = {}
     local lastExp
+    local searching = searchText ~= ""
     for _, d in ipairs(ns.dungeons) do
-        if searchText == "" or d.name:lower():find(searchText, 1, true) then
+        if (not searching) or d.name:lower():find(searchText, 1, true) then
             if d.expansion ~= lastExp then
                 items[#items + 1] = { header = d.expansion }
                 lastExp = d.expansion
             end
-            items[#items + 1] = { dungeon = d }
+            -- collapsed categories hide their dungeons (but search overrides it)
+            local collapsed = ns.db.collapsed and ns.db.collapsed[d.expansion]
+            if searching or not collapsed then
+                items[#items + 1] = { dungeon = d }
+            end
         end
     end
     return items
@@ -556,18 +604,27 @@ local function getDungeonRow(i, parent)
     row:SetHeight(30)
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     row.name:SetPoint("TOPLEFT", 8, -3)
-    row.name:SetPoint("RIGHT", -4, 0)
+    row.name:SetPoint("RIGHT", -40, 0)
     row.name:SetJustifyH("LEFT")
     row.sub = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     row.sub:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -1)
     row.sub:SetJustifyH("LEFT")
+    row.count = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.count:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    row.count:SetJustifyH("RIGHT")
     row.hl = row:CreateTexture(nil, "BACKGROUND")
     row.hl:SetAllPoints(); row.hl:SetColorTexture(0.3, 0.5, 0.8, 0.25); row.hl:Hide()
     row.sel = row:CreateTexture(nil, "BACKGROUND")
     row.sel:SetAllPoints(); row.sel:SetColorTexture(0.25, 0.45, 0.75, 0.45); row.sel:Hide()
-    row:SetScript("OnEnter", function(self) if self.key then self.hl:Show() end end)
+    row:SetScript("OnEnter", function(self) if self.key or self.headerExp then self.hl:Show() end end)
     row:SetScript("OnLeave", function(self) self.hl:Hide() end)
     row:SetScript("OnClick", function(self)
+        if self.headerExp then
+            ns.db.collapsed = ns.db.collapsed or {}
+            ns.db.collapsed[self.headerExp] = (not ns.db.collapsed[self.headerExp]) or nil
+            ns.RefreshUI()
+            return
+        end
         if not self.key then return end
         selectedKey = self.key
         ns.db.selected = self.key
@@ -575,6 +632,31 @@ local function getDungeonRow(i, parent)
     end)
     dungeonRows[i] = row
     return row
+end
+
+-- Per-dungeon completion: counts player-relevant quests (faction/class/race ok,
+-- not "unavailable"), optionally including breadcrumbs. Returns done, total.
+local function dungeonTally(dungeon)
+    local incBc = ns.db.filters.breadcrumbsInCompletion
+    local done, total, seen = 0, 0, {}
+    local function consider(id)
+        if seen[id] then return end
+        seen[id] = true
+        local info = ns.GetQuestInfo(id)
+        if not info or info.missing then return end
+        if info.faction and info.faction ~= "Both" and info.faction ~= ns.player.faction then return end
+        local status = ns.GetQuestStatus(id, info)
+        if status == "unavailable" or status == "unknown" then return end
+        total = total + 1
+        if status == "done" then done = done + 1 end
+        if incBc and info.breadcrumbs then
+            for _, bcId in ipairs(info.breadcrumbs) do consider(bcId) end
+        end
+    end
+    for _, q in ipairs(dungeon.quests) do consider(q.id) end
+    local custom = ns.db.custom and ns.db.custom[dungeon.key]
+    if custom then for _, id in ipairs(custom) do consider(id) end end
+    return done, total
 end
 
 local function renderDungeons()
@@ -591,21 +673,44 @@ local function renderDungeons()
         row:SetPoint("RIGHT", child, "RIGHT", 0, 0)
         if item.header then
             row.key = nil
+            row.headerExp = item.header
             row:SetHeight(22)
-            row.name:SetText("|cffffd100" .. item.header .. "|r")
+            local collapsed = ns.db.collapsed and ns.db.collapsed[item.header]
+            local icon = collapsed and "|TInterface\\Buttons\\UI-PlusButton-Up:14:14:0:0|t"
+                or "|TInterface\\Buttons\\UI-MinusButton-Up:14:14:0:0|t"
+            row.name:SetText(icon .. " |cffffd100" .. item.header .. "|r")
             row.sub:SetText("")
+            row.count:Hide()
             row.sel:Hide(); row.hl:Hide()
-            row:EnableMouse(false)
+            row:EnableMouse(true)
             y = y - 24
         else
             local d = item.dungeon
             row.key = d.key
+            row.headerExp = nil
             row:SetHeight(30)
             row.name:SetText(d.name)
             row.sub:SetText("lvl " .. d.minLevel .. "-" .. d.maxLevel .. "  •  " .. d.zone)
             row.sel:SetShown(d.key == selectedKey)
             row.hl:Hide()
             row:EnableMouse(true)
+            -- Completion in the left list (optional).
+            local done, total = 0, 0
+            if ns.db.filters.showCounts and ns.QuestieReady then done, total = dungeonTally(d) end
+            if total > 0 then
+                if done == total then
+                    row.name:SetTextColor(0.40, 0.85, 0.40)
+                    row.count:SetTextColor(0.40, 0.85, 0.40)
+                else
+                    row.name:SetTextColor(1, 0.82, 0)
+                    row.count:SetTextColor(0.7, 0.7, 0.7)
+                end
+                row.count:SetText(done .. "/" .. total)
+                row.count:Show()
+            else
+                row.name:SetTextColor(1, 0.82, 0)
+                row.count:Hide()
+            end
             y = y - 32
         end
         row:Show()
@@ -620,6 +725,10 @@ function ns.RefreshUI()
     if not UI or not UI:IsShown() then return end
     renderDungeons()
     renderQuests()
+end
+
+function ns.SetWindowOpacity(v)
+    if UI then UI:SetAlpha(v or 1) end
 end
 
 --------------------------------------------------------------------------
@@ -648,27 +757,17 @@ local function makeScroll(parent, name)
     return scroll
 end
 
-local function makeCheck(parent, label, key)
-    local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    cb:SetSize(22, 22)
-    local txt = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    txt:SetPoint("LEFT", cb, "RIGHT", 1, 0)
-    txt:SetText(label)
-    cb:SetScript("OnShow", function(self) self:SetChecked(ns.db.filters[key]) end)
-    cb:SetScript("OnClick", function(self)
-        ns.db.filters[key] = self:GetChecked() and true or false
-        ns.RefreshUI()
-    end)
-    cb.label = txt
-    return cb
-end
-
 local function buildUI()
     if UI then return end
     UI = CreateFrame("Frame", "DungeonQuestsFrame", UIParent, "BackdropTemplate")
     UI:SetSize(800, 520)
     UI:SetFrameStrata("HIGH")
     UI:SetBackdrop(BACKDROP)
+    -- solid fill behind the backdrop so 100% opacity reads as fully opaque
+    local solid = UI:CreateTexture(nil, "BACKGROUND", nil, -1)
+    solid:SetPoint("TOPLEFT", 5, -5)
+    solid:SetPoint("BOTTOMRIGHT", -5, 5)
+    solid:SetColorTexture(0.05, 0.05, 0.07, 1)
     UI:SetClampedToScreen(true)
     UI:SetMovable(true)
     UI:EnableMouse(true)
@@ -706,16 +805,12 @@ local function buildUI()
     sLabel:SetPoint("BOTTOMLEFT", search, "TOPLEFT", -2, 2)
     sLabel:SetText("Search dungeons")
 
-    -- filters (top-right row)
-    local c1 = makeCheck(UI, "My faction only", "playerFactionOnly")
-    c1:SetPoint("TOPLEFT", search, "TOPRIGHT", 16, 2)
-    local c2 = makeCheck(UI, "Hide completed", "hideCompleted")
-    c2:SetPoint("LEFT", c1.label, "RIGHT", 14, 0)
-    local c3 = makeCheck(UI, "Hide unavailable", "hideUnavailable")
-    c3:SetPoint("LEFT", c2.label, "RIGHT", 14, 0)
-    local c4 = makeCheck(UI, "Breadcrumbs", "showBreadcrumbs")
-    c4:SetPoint("LEFT", c3.label, "RIGHT", 14, 0)
-    c4.label:SetText("Breadcrumbs " .. BREAD)
+    -- Settings button (filters/opacity live in the standalone options panel)
+    UI.settingsBtn = CreateFrame("Button", nil, UI, "UIPanelButtonTemplate")
+    UI.settingsBtn:SetSize(90, 22)
+    UI.settingsBtn:SetPoint("LEFT", search, "RIGHT", 16, 0)
+    UI.settingsBtn:SetText("Settings")
+    UI.settingsBtn:SetScript("OnClick", function() if ns.OpenOptions then ns.OpenOptions() end end)
 
     -- divider line under the controls
     local sep = UI:CreateTexture(nil, "ARTWORK")
@@ -770,6 +865,7 @@ local function buildUI()
     UI.empty:SetPoint("TOP", UI.questScroll, "TOP", 0, -20)
     UI.empty:SetText("")
 
+    UI:SetAlpha(ns.db.opacity or 1)
     UI:Hide()
 end
 
